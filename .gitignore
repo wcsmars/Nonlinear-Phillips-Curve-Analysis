@@ -1,0 +1,44 @@
+# Local data, environments, generated tables, and the synthetic demo workspace
+/data/
+/tables/
+/demo/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+.idea/
+.vscode/
+.claude/
+.codex/
+.agents/
+
+# Secrets and private configuration
+.env
+.env.*
+config.yaml
+config.yml
+credentials/
+private/
+*.key
+*.pem
+
+# Private write-ups, notes, and their build scripts stay out of this release
+/paper/
+/docs/
+/code/05_assemble.py
+/code/06_fix_docx_xml.py
+*.docx
+*.tex
+*.bib
+*.pdf
+*.pptx
