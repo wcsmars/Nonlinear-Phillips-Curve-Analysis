@@ -18,9 +18,6 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
-.claude/
-.codex/
-.agents/
 
 # Secrets and private configuration
 .env
@@ -32,7 +29,7 @@ private/
 *.key
 *.pem
 
-# Private write-ups, notes, and their build scripts stay out of this release
+# Local documents and build scripts
 /paper/
 /docs/
 /code/05_assemble.py
