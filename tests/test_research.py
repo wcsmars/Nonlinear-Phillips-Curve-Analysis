@@ -8,6 +8,7 @@ import csv
 import importlib.util
 import json
 import math
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -20,6 +21,14 @@ import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def markdown_cells(table):
+    """Header cells and body rows of the pipe tables in a file (panels share a header)."""
+    cells = [[cell.strip() for cell in line.strip().strip("|").split("|")]
+             for line in table.splitlines()
+             if line.startswith("|") and not set(line) <= set("|:- ")]
+    return cells[0], [row for row in cells[1:] if row != cells[0]]
 
 
 class DatasetBuildTests(unittest.TestCase):
@@ -76,6 +85,7 @@ class DatasetBuildTests(unittest.TestCase):
             output = checkout / "data" / "processed" / "quarterly.csv"
             self.assertTrue(output.is_file())
             self.assertFalse((elsewhere / "data").exists())
+            self.assertIn("fewer than 3 months: none", completed.stdout)
             data = pd.read_csv(output, index_col="quarter", parse_dates=True)
             observed = data.loc["2019-07-01"]
             self.assertAlmostEqual(observed["pi_qa_cpi"], 400 * math.log(1.01))
@@ -112,8 +122,11 @@ class TableGenerationTests(unittest.TestCase):
             shutil.copyfile(ROOT / "results" / "results.json", results / "results.json")
             elsewhere = base / "unrelated working directory"
             elsewhere.mkdir()
+            # Tables contain characters such as ĉ, κ and −, so file I/O that
+            # relies on the platform default encoding fails on Windows (cp1252).
             completed = subprocess.run(
-                [sys.executable, str(script)], cwd=elsewhere,
+                [sys.executable, "-X", "warn_default_encoding", "-W", "error::EncodingWarning",
+                 str(script)], cwd=elsewhere,
                 capture_output=True, text=True, timeout=60,
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
@@ -123,12 +136,11 @@ class TableGenerationTests(unittest.TestCase):
                 "table4_robustness.md", "table5_decomposition.md",
             })
             self.assertFalse((elsewhere / "tables").exists())
-            table = (tables / "table1_descriptives.md").read_text()
+            table = (tables / "table1_descriptives.md").read_text(encoding="utf-8")
             self.assertNotRegex(table, r"\b(?:None|NaN|nan|null)\b")
-            cells = [[cell.strip() for cell in line.strip().strip("|").split("|")]
-                     for line in table.splitlines() if line.startswith("|")]
-            header, rows = cells[0], {row[0]: row for row in cells[2:]}
-            saved = json.loads((results / "results.json").read_text())
+            header, body = markdown_cells(table)
+            rows = {row[0]: row for row in body}
+            saved = json.loads((results / "results.json").read_text(encoding="utf-8"))
             missing_cells = 0
             for key, label in {
                 "vu": "Vacancy/unemployment ratio",
@@ -139,6 +151,21 @@ class TableGenerationTests(unittest.TestCase):
                         self.assertEqual(rows[label][header.index(period)], "—")
                         missing_cells += 1
             self.assertGreater(missing_cells, 0, "Fixture must exercise unavailable statistics")
+
+            # Formatted cells are written verbatim: signs and trailing zeros survive.
+            formats = {
+                "table2_linear_pc.md": {"R²": r"\d\.\d{3}"},
+                "table4_robustness.md": {"ĉ": r"\d\.\d{2}", "Slope below": r"-?\d+\.\d{2}"},
+                "table5_decomposition.md": {None: r"[+-]\d+\.\d{2}"},
+            }
+            for name, columns in formats.items():
+                header, body = markdown_cells((tables / name).read_text(encoding="utf-8"))
+                for column, pattern in columns.items():
+                    positions = [header.index(column)] if column else range(1, len(header))
+                    for row in body:
+                        for position in positions:
+                            with self.subTest(table=name, row=row[0], column=header[position]):
+                                self.assertRegex(row[position], rf"^{pattern}$")
 
 
 class SyntheticDemoTests(unittest.TestCase):
@@ -166,6 +193,8 @@ class SyntheticDemoTests(unittest.TestCase):
                 cwd=temporary, capture_output=True, text=True, timeout=120,
             )
             self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+            # JOLTS starts in December 2000, so 2000Q4 v/u uses one month of vacancies.
+            self.assertIn("JTSJOL 2000Q4 (1 of 3 months)", built.stdout)
             data = pd.read_csv(workspace / "data" / "processed" / "quarterly.csv",
                                index_col="quarter", parse_dates=True)
             self.assertEqual(data.index[-1], pd.Timestamp("2026-01-01"))
@@ -197,7 +226,7 @@ class SyntheticDemoTests(unittest.TestCase):
 class SavedOutputTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        with (ROOT / "results" / "results.json").open() as source:
+        with (ROOT / "results" / "results.json").open(encoding="utf-8") as source:
             cls.results = json.load(source)
         cls.decomposition = pd.read_csv(
             ROOT / "results" / "decomposition.csv",
@@ -258,7 +287,7 @@ class SavedOutputTests(unittest.TestCase):
                                        result["rmse_ratio"], delta=0.002)
 
     def test_selected_threshold_minimizes_saved_grid(self):
-        with (ROOT / "results" / "kink_grid_ssr.csv").open() as source:
+        with (ROOT / "results" / "kink_grid_ssr.csv").open(encoding="utf-8", newline="") as source:
             rows = list(csv.reader(source))[1:]
         grid = {float(threshold): float(ssr) for threshold, ssr in rows}
         self.assertTrue(grid)
@@ -268,6 +297,39 @@ class SavedOutputTests(unittest.TestCase):
         self.assertAlmostEqual(grid[selected], min(grid.values()), places=8)
         self.assertGreaterEqual(self.results["kink_test"]["p_bootstrap"], 0)
         self.assertLessEqual(self.results["kink_test"]["p_bootstrap"], 1)
+
+    def test_readme_results_table_matches_saved_results(self):
+        """The README quotes saved estimates; regenerated results must be re-quoted."""
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        _, body = markdown_cells(readme.split("## Results", 1)[1].split("\n## ", 1)[0])
+        r = self.results
+        slopes = {x["name"]: x["params"]["ugap"] for x in r["panelA_accelerationist"]}
+        qa, lin, kink, test = r["quandt_andrews"], r["modern_linear"], r["modern_kink"], r["kink_test"]
+        brk = pd.Timestamp(qa["break_date"])
+        expected = {  # row label prefix -> numbers quoted in that row, in order
+            "Unemployment-gap slope": [slopes["1960Q1-1989Q4"], slopes["1990Q1-2019Q4"]],
+            "Quandt–Andrews slope-break date": [brk.year, brk.quarter, qa["sup_wald"], qa["crit_1pct"]],
+            "Linear vacancy/unemployment slope": [lin["params"]["vu"], lin["tvalues"]["vu"]],
+            "Estimated vacancy/unemployment kink": [kink["c_hat"], *test["c_ci95"]],
+            "Slope above / slope below": [kink["slope_ratio"]],
+            "Bootstrap test of linearity": [test["p_bootstrap"]],
+            "Holdout RMSE, trained through 2022Q4": [r["oos_pre2023"]["rmse_linear"],
+                                                     r["oos_pre2023"]["rmse_kink"]],
+            "Holdout RMSE, trained through 2019Q4": [r["oos_pre2020"]["rmse_linear"],
+                                                     r["oos_pre2020"]["rmse_kink"],
+                                                     r["oos_pre2020"]["c_trained"]],
+        }
+        for prefix, values in expected.items():
+            with self.subTest(row=prefix):
+                rows = [text for label, text in body if label.startswith(prefix)]
+                self.assertEqual(len(rows), 1, "README results row missing or duplicated")
+                # Numbers other than percentages, e.g. "−0.5554", "1983Q2", "0.40–1.40".
+                quoted = re.findall(r"[−-]?\d+(?:\.\d+)?(?![\d.%])", rows[0])
+                self.assertEqual(len(quoted), len(values), quoted)
+                for text, value in zip(quoted, values):
+                    decimals = len(text.partition(".")[2])
+                    self.assertAlmostEqual(float(text.replace("−", "-")), value,
+                                           delta=0.5 * 10 ** -decimals + 5e-4, msg=text)
 
 
 if __name__ == "__main__":

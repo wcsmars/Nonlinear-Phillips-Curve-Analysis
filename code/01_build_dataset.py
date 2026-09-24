@@ -16,6 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / "data" / "raw"
 OUT = ROOT / "data" / "processed"
 OUT.mkdir(parents=True, exist_ok=True)
+LAST_QUARTER = "2026-01-01"
+partial = []  # quarters averaged from fewer than three monthly observations
 
 
 def fred(series: str) -> pd.Series:
@@ -27,6 +29,11 @@ def fred(series: str) -> pd.Series:
 
 
 def to_q(s: pd.Series) -> pd.Series:
+    # A missing month (a source gap, or a series starting mid-quarter) leaves the
+    # quarter averaged over fewer months; report it rather than pass it silently.
+    months = s.resample("QS").count().loc[:LAST_QUARTER]
+    partial.extend(f"{s.name} {q.year}Q{q.quarter} ({n} of 3 months)"
+                   for q, n in months[(months > 0) & (months < 3)].items())
     return s.resample("QS").mean()
 
 
@@ -56,7 +63,7 @@ cols["cle10y"] = to_q(fred("EXPINF10YR"))    # Cleveland Fed 10y, from 1982
 
 # --- supply-side measures ---------------------------------------------------
 g = pd.read_csv(RAW / "GSCPI.csv", parse_dates=["date"]).set_index("date")["gscpi"]
-cols["gscpi"] = g.resample("QS").mean()
+cols["gscpi"] = to_q(g)
 
 df = pd.DataFrame(cols)
 
@@ -69,7 +76,7 @@ df["pi_adaptive"] = df["pi_qa_cpi"].shift(1).rolling(4).mean()
 
 # trim to complete quarters: drop the current partial quarter (2026Q2 has
 # only Apr/May for monthly series)
-df = df.loc["1948-01-01":"2026-01-01"]
+df = df.loc["1948-01-01":LAST_QUARTER]
 df.index.name = "quarter"
 df.to_csv(OUT / "quarterly.csv")
 
@@ -77,3 +84,4 @@ print(df.loc["1959-10-01":].head(3).round(2).to_string())
 print(df.tail(6).round(2).to_string())
 print("\nrows:", len(df), "| v/u available:", df["vu"].first_valid_index(),
       "->", df["vu"].last_valid_index())
+print("quarters averaged from fewer than 3 months:", "; ".join(partial) or "none")

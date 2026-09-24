@@ -155,7 +155,8 @@ def prepare(workspace, seed):
     (workspace / MARKER).write_text(
         "Synthetic demo workspace written by code/run_demo.py. Every input, "
         f"estimate, figure and table here is synthetic (seed {seed}, planted kink "
-        f"at v/u = {PLANTED_KINK}); none of it describes the U.S. economy.\n")
+        f"at v/u = {PLANTED_KINK}); none of it describes the U.S. economy.\n",
+        encoding="utf-8")
     for name in PIPELINE:
         shutil.copyfile(ROOT / "code" / name, code / name)
     write_inputs(raw, seed)
@@ -172,7 +173,7 @@ def run_pipeline(workspace):
 
 
 def summarize(workspace):
-    res = json.loads((workspace / "results" / "results.json").read_text())
+    res = json.loads((workspace / "results" / "results.json").read_text(encoding="utf-8"))
     kink, test = res["modern_kink"], res["kink_test"]
     print(f"\nPlanted kink at v/u = {PLANTED_KINK:.2f}; estimated {kink['c_hat']:.2f}.")
     print(f"Planted slopes below/above: {SLOPE_BELOW} / {SLOPE_ABOVE}; "

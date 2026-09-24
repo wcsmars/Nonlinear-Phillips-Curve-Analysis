@@ -129,7 +129,8 @@ comes from the Federal Reserve Bank of New York. Download provenance records
 the URLs, retrieval time, and file checksums locally. Consult each source for
 its usage terms.
 
-Monthly observations are averaged within calendar quarters. Inflation is
+Monthly observations are averaged within calendar quarters; the build step
+lists any quarter averaged from fewer than three months. Inflation is
 `400 × log(Pq / Pq−1)` for quarterly annualized rates and
 `100 × log(Pq / Pq−4)` for year-over-year rates. The unemployment gap is
 UNRATE minus NROU; tightness is JTSJOL divided by UNEMPLOY. Relative energy

@@ -345,7 +345,7 @@ def json_safe(value):
     return value
 
 
-with open(RES / "results.json", "w") as f:
+with open(RES / "results.json", "w", encoding="utf-8") as f:
     json.dump(json_safe(results), f, indent=1, allow_nan=False)
 print("written results.json")
 print("\n--- headline numbers ---")

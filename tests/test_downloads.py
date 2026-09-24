@@ -94,7 +94,7 @@ class DownloadTests(unittest.TestCase):
             with patch.object(fetch, "download", return_value=replacement) as download:
                 fetch.acquire("UNRATE", raw, force=True)
                 download.assert_called_once()
-            metadata = json.loads((raw / "UNRATE.provenance.json").read_text())
+            metadata = json.loads((raw / "UNRATE.provenance.json").read_text(encoding="utf-8"))
             self.assertEqual(path.read_bytes(), replacement)
             self.assertIsNotNone(metadata["retrieved_at_utc"])
             self.assertEqual(metadata["source_sha256"], hashlib.sha256(replacement).hexdigest())
