@@ -92,7 +92,9 @@ def parse_gscpi_workbook(payload):
     )
     output = pd.DataFrame({"date": dates[valid], "gscpi": values[valid]})
     output = output.sort_values("date")
-    payload = output.to_csv(index=False, date_format="%Y-%m-%d").encode("utf-8")
+    # LF on every platform, so the file and its recorded checksum do not depend on the OS.
+    payload = output.to_csv(index=False, date_format="%Y-%m-%d",
+                            lineterminator="\n").encode("utf-8")
     validate_csv(payload, "GSCPI")
     return payload
 
